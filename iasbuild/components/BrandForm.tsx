@@ -3,20 +3,29 @@
 import { useState } from "react";
 import {
   buildBrandModel,
+  suggestColorChoices,
+  SHAPE_TAXONOMY,
   type ExtractedColor,
   type FormAnswers,
+  type ColorChoices,
+  type ShapeCategory,
 } from "@/lib/brand-logic";
 import { generateClaudeMd } from "@/lib/generate-claude-md";
 import { generateHtmlGuide } from "@/lib/generate-html-guide";
 
-type Step = 0 | 1 | 2 | 3 | 4 | 5 | 6;
+// Steps: 0 logo+name · 1 shape · 2 colors · 3 type · 4 icons · 5 buttons · 6 email · 7 result
+type Step = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
+const LAST_INPUT: Step = 6; // email is the final input before generation
+const RESULT: Step = 7;
 
 interface State {
   brandName: string;
   logoName: string;
   logoDataUri: string;
   extracted: ExtractedColor[];
-  logoHasWordmark: boolean | null;
+  shapeCategory: ShapeCategory | "";
+  colors: ColorChoices;
+  colorsTouched: boolean; // has the user seen/confirmed the picker step
   typeMood: string;
   iconChoice: "sharp" | "rounded" | "outlined" | "";
   buttonShape: "square" | "rounded" | "pill" | "";
@@ -28,7 +37,9 @@ const initial: State = {
   logoName: "",
   logoDataUri: "",
   extracted: [],
-  logoHasWordmark: null,
+  shapeCategory: "",
+  colors: { primary: "#0A2E36", secondary: "#3F7266", accent: "#00E5A3" },
+  colorsTouched: false,
   typeMood: "",
   iconChoice: "",
   buttonShape: "",
@@ -106,7 +117,8 @@ export function BrandForm() {
   const answers = (): FormAnswers => ({
     brandName: s.brandName,
     extracted: s.extracted,
-    logoHasWordmark: s.logoHasWordmark ?? true,
+    colors: s.colors,
+    shapeCategory: (s.shapeCategory || "square") as ShapeCategory,
     typeMood: s.typeMood || "modern",
     iconChoice: (s.iconChoice || "rounded") as FormAnswers["iconChoice"],
     buttonShape: (s.buttonShape || "rounded") as FormAnswers["buttonShape"],
@@ -114,12 +126,13 @@ export function BrandForm() {
 
   const valid: Record<Step, boolean> = {
     0: !!(s.brandName.trim() && s.logoDataUri),
-    1: s.logoHasWordmark !== null,
-    2: !!s.typeMood,
-    3: !!s.iconChoice,
-    4: !!s.buttonShape,
-    5: /.+@.+\..+/.test(s.email),
-    6: true,
+    1: !!s.shapeCategory,
+    2: s.colorsTouched,
+    3: !!s.typeMood,
+    4: !!s.iconChoice,
+    5: !!s.buttonShape,
+    6: /.+@.+\..+/.test(s.email),
+    7: true,
   };
 
   async function handleFile(f: File) {
@@ -128,7 +141,9 @@ export function BrandForm() {
     reader.onload = async (ev) => {
       const uri = ev.target?.result as string;
       const colors = await extractColors(uri);
-      set({ logoDataUri: uri, extracted: colors });
+      // Pre-fill the three pickers from extraction; user confirms/overrides at step 2.
+      const suggested = suggestColorChoices(colors);
+      set({ logoDataUri: uri, extracted: colors, colors: suggested });
     };
     reader.readAsDataURL(f);
   }
@@ -156,7 +171,7 @@ export function BrandForm() {
       setDelivery({ mode: "demo", notes: ["Request failed — files still available below."] });
     }
     setSubmitting(false);
-    setStep(6);
+    setStep(RESULT);
   }
 
   const model = valid[0] ? buildBrandModel(answers()) : null;
@@ -165,7 +180,7 @@ export function BrandForm() {
     <div>
       {/* Progress dots */}
       <div className="mb-6 flex gap-2">
-        {[0, 1, 2, 3, 4, 5, 6].map((i) => (
+        {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
           <span
             key={i}
             className={`h-[9px] w-[9px] rounded-full ${
@@ -183,7 +198,7 @@ export function BrandForm() {
               type="text"
               value={s.brandName}
               onChange={(e) => set({ brandName: e.target.value })}
-              placeholder="e.g. Northwind Coffee"
+              placeholder="e.g. KzooParking"
               className="mb-6 w-full rounded-btn border border-mid px-3 py-2.5 text-sm"
             />
             <Label>
@@ -210,6 +225,10 @@ export function BrandForm() {
                     />
                   ))}
                 </div>
+                <p className="mt-2 font-mono text-[11px] text-muted">
+                  If your logo is black-and-white, that&rsquo;s fine — you&rsquo;ll set your
+                  real brand colors next.
+                </p>
               </div>
             )}
           </Step>
@@ -217,21 +236,35 @@ export function BrandForm() {
 
         {step === 1 && (
           <Step
-            title="Does your logo include your name in text?"
-            help="This decides your clear-space rule — the empty margin around your logo. You don't measure anything; we compute it from the logo."
+            title="What shape is your logo?"
+            help="This sets your logo's layout rules — aspect ratio and the clear space around it — using a standard shape taxonomy. Pick the closest match."
           >
             <OptionGrid
-              options={[
-                { v: true, label: "Yes — it has the name in it", sub: "wordmark or logo + text" },
-                { v: false, label: "No — it's just a symbol", sub: "a mark with no text" },
-              ]}
-              selected={s.logoHasWordmark}
-              onSelect={(v) => set({ logoHasWordmark: v as boolean })}
+              options={(Object.keys(SHAPE_TAXONOMY) as ShapeCategory[]).map((k) => ({
+                v: k,
+                label: SHAPE_TAXONOMY[k].label,
+                sub: `${SHAPE_TAXONOMY[k].aspectRatios} · clear space ${SHAPE_TAXONOMY[k].clearspaceLabel}`,
+              }))}
+              selected={s.shapeCategory}
+              onSelect={(v) => set({ shapeCategory: v as ShapeCategory })}
             />
           </Step>
         )}
 
         {step === 2 && (
+          <Step
+            title="Confirm your brand colors"
+            help="We pre-filled these from your logo. Extraction can't invent colors a logo doesn't contain — so if your logo is black-and-white, set your real brand colors here. These three drive the whole guide."
+          >
+            <ColorPickers
+              colors={s.colors}
+              extracted={s.extracted}
+              onChange={(colors) => set({ colors, colorsTouched: true })}
+            />
+          </Step>
+        )}
+
+        {step === 3 && (
           <Step
             title="Which feels most like your brand?"
             help="This picks your fonts — a heading and body face, both free from Google Fonts. You pick a feeling; we handle the pairing and sizes."
@@ -249,7 +282,7 @@ export function BrandForm() {
           </Step>
         )}
 
-        {step === 3 && (
+        {step === 4 && (
           <Step
             title="Pick an icon style"
             help="Iconography style is the shape language of your icons. All icons come from Google's free Material Symbols set. Pick one; it's used everywhere."
@@ -266,7 +299,7 @@ export function BrandForm() {
           </Step>
         )}
 
-        {step === 4 && (
+        {step === 5 && (
           <Step
             title="Pick a button style"
             help="Button style is the corner radius on your buttons. Consistency matters more than the choice — one shape, used everywhere."
@@ -283,7 +316,7 @@ export function BrandForm() {
           </Step>
         )}
 
-        {step === 5 && (
+        {step === 6 && (
           <Step
             title="Where should we send your brand guide?"
             help="We email two files: a CLAUDE.md your AI reads as brand rules, and a ready-to-open HTML brand guide — plus install instructions."
@@ -305,10 +338,12 @@ export function BrandForm() {
           </Step>
         )}
 
-        {step === 6 && model && (
+        {step === RESULT && model && (
           <Step title="Your brand guide is ready">
             <div className="mb-5">
-              <p className="mb-2 text-xs font-semibold">Palette (from your logo)</p>
+              <p className="mb-2 text-xs font-semibold">
+                Palette · {model.shape.label} · clear space {model.shape.clearspaceLabel}
+              </p>
               <div className="grid grid-cols-5 gap-2">
                 {model.palette.map((p) => (
                   <div key={p.role} className="text-center">
@@ -384,7 +419,7 @@ export function BrandForm() {
       </div>
 
       {/* Nav */}
-      {step < 6 && (
+      {step < RESULT && (
         <div className="mt-6 flex justify-between">
           <button
             onClick={() => setStep((step - 1) as Step)}
@@ -394,10 +429,10 @@ export function BrandForm() {
           >
             Back
           </button>
-          {step === 5 ? (
+          {step === LAST_INPUT ? (
             <button
               onClick={submit}
-              disabled={!valid[5] || submitting}
+              disabled={!valid[LAST_INPUT] || submitting}
               className="rounded-btn bg-accent px-6 py-2.5 text-sm font-semibold text-primary disabled:opacity-40"
             >
               {submitting ? "Generating…" : "Generate"}
@@ -473,6 +508,72 @@ function OptionGrid<T>({
           </button>
         );
       })}
+    </div>
+  );
+}
+
+// Three labeled color pickers (primary/secondary/accent) with hex text inputs,
+// plus quick-apply swatches from what extraction found. This is the step that
+// makes monochrome logos work — the user supplies colors the pixels don't have.
+function ColorPickers({
+  colors,
+  extracted,
+  onChange,
+}: {
+  colors: ColorChoices;
+  extracted: ExtractedColor[];
+  onChange: (c: ColorChoices) => void;
+}) {
+  const roles: { key: keyof ColorChoices; label: string; usage: string }[] = [
+    { key: "primary", label: "Primary", usage: "Headers, nav, dark sections" },
+    { key: "secondary", label: "Secondary", usage: "Icons, dividers, supporting labels" },
+    { key: "accent", label: "Accent", usage: "Buttons, links, active states" },
+  ];
+  return (
+    <div className="grid gap-4">
+      {roles.map((r) => (
+        <div key={r.key} className="flex items-center gap-3">
+          <input
+            type="color"
+            value={colors[r.key]}
+            onChange={(e) => onChange({ ...colors, [r.key]: e.target.value })}
+            aria-label={`${r.label} color`}
+            className="h-11 w-11 shrink-0 cursor-pointer rounded-btn border border-mid bg-white p-0.5"
+          />
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold">{r.label}</span>
+              <input
+                type="text"
+                value={colors[r.key]}
+                onChange={(e) => onChange({ ...colors, [r.key]: e.target.value })}
+                className="w-24 rounded-btn border border-mid px-2 py-1 font-mono text-xs"
+              />
+            </div>
+            <p className="mt-0.5 text-xs text-muted">{r.usage}</p>
+          </div>
+        </div>
+      ))}
+
+      {extracted.length > 0 && (
+        <div>
+          <p className="mb-2 text-xs font-semibold">Quick-apply from your logo:</p>
+          <div className="flex flex-wrap gap-2">
+            {extracted.map((c) => (
+              <button
+                key={c.hex}
+                title={`Use ${c.hex} as accent`}
+                onClick={() => onChange({ ...colors, accent: c.hex })}
+                className="h-7 w-7 rounded-btn border border-mid"
+                style={{ background: c.hex }}
+              />
+            ))}
+          </div>
+          <p className="mt-1 font-mono text-[10px] text-muted">
+            Tap a swatch to set it as your accent, or use the pickers above.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

@@ -40,10 +40,11 @@ export function generateHtmlGuide(m: BrandModel, logoDataUri: string): string {
     )
     .join("");
 
-  const icons = m.iconStyle.sampleIcons
+  // Each icon links to its own Google Icons page; evenly spaced (draft-003).
+  const icons = m.iconStyle.sampleIconLinks
     .map(
-      (name) =>
-        `<span class="material-symbols text-3xl" style="color:${primary}">${name}</span>`
+      (l) =>
+        `<a href="${l.url}" target="_blank" rel="noopener" title="${l.name} on Google Icons" class="material-symbols text-3xl no-underline transition-opacity hover:opacity-60" style="color:${primary}">${l.name}</a>`
     )
     .join("");
 
@@ -70,6 +71,23 @@ export function generateHtmlGuide(m: BrandModel, logoDataUri: string): string {
   };
   const iconFontParam = iconFontMap[m.iconStyle.family];
 
+  // Shape-aware logo frame. The aspect ratio and the on-color tile shape follow
+  // the taxonomy category the user picked. Circle/oval get a rounded frame;
+  // landscape/vertical get the matching aspect ratio; pill gets full radius.
+  const r = m.shape.previewRatio; // width / height
+  const frameStyle =
+    m.shape.category === "circle"
+      ? "aspect-ratio:1/1;border-radius:9999px;max-width:220px"
+      : m.shape.category === "pill"
+      ? `aspect-ratio:${r}/1;border-radius:9999px`
+      : `aspect-ratio:${r}/1`;
+  const tileStyle =
+    m.shape.category === "circle"
+      ? "aspect-ratio:1/1;border-radius:9999px"
+      : m.shape.category === "pill"
+      ? `aspect-ratio:${r}/1;border-radius:9999px`
+      : `aspect-ratio:${r}/1;border-radius:8px`;
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -95,37 +113,40 @@ export function generateHtmlGuide(m: BrandModel, logoDataUri: string): string {
 <body class="bg-white text-gray-800">
   <div class="max-w-5xl mx-auto px-6 py-12">
 
-    <!-- Header -->
-    <header class="flex items-end justify-between border-b border-gray-200 pb-6 mb-12">
-      <div>
-        <div class="eyebrow text-xs uppercase text-gray-400 mb-2">Brand Guidelines</div>
-        <h1 class="text-4xl md:text-5xl font-bold" style="color:${primary}">${m.brandName}</h1>
-      </div>
-      <img src="${logoDataUri}" alt="${m.brandName} logo" class="h-14 object-contain"/>
+    <!-- Header (logo intentionally omitted — see build spec) -->
+    <header class="border-b border-gray-200 pb-6 mb-12">
+      <div class="eyebrow text-xs uppercase text-gray-400 mb-2">Brand Guidelines</div>
+      <h1 class="text-4xl md:text-5xl font-bold" style="color:${primary}">${m.brandName}</h1>
     </header>
 
     <div class="grid md:grid-cols-2 gap-12">
 
-      <!-- Logo + variations -->
+      <!-- Logo + variations (shape-aware) -->
       <section>
-        <h2 class="eyebrow text-xs uppercase text-gray-400 mb-4">Company Logo</h2>
-        <div class="rounded-lg border border-gray-200 p-8 flex items-center justify-center mb-4" style="background:${light}">
-          <img src="${logoDataUri}" alt="${m.brandName} logo" class="h-20 object-contain"/>
+        <div class="flex items-baseline justify-between mb-4">
+          <h2 class="eyebrow text-xs uppercase text-gray-400">Company Logo</h2>
+          <span class="font-mono text-[10px] text-gray-400">${m.shape.label} · ${m.shape.aspectRatios}</span>
+        </div>
+        <div class="border border-gray-200 flex items-center justify-center mb-4 mx-auto w-full" style="background:${light};${frameStyle};border-radius:${m.shape.category === "circle" || m.shape.category === "pill" ? "9999px" : "8px"};padding:1.5rem">
+          <img src="${logoDataUri}" alt="${m.brandName} logo" class="object-contain max-h-full max-w-full"/>
         </div>
         <div class="grid grid-cols-3 gap-3">
-          <div class="rounded-lg border border-gray-200 p-4 flex items-center justify-center bg-white"><img src="${logoDataUri}" class="h-8 object-contain"/></div>
-          <div class="rounded-lg p-4 flex items-center justify-center" style="background:${primary}"><img src="${logoDataUri}" class="h-8 object-contain"/></div>
-          <div class="rounded-lg p-4 flex items-center justify-center" style="background:${accent}"><img src="${logoDataUri}" class="h-8 object-contain"/></div>
+          <div class="border border-gray-200 bg-white flex items-center justify-center p-3" style="${tileStyle}"><img src="${logoDataUri}" class="object-contain max-h-full max-w-full"/></div>
+          <div class="flex items-center justify-center p-3" style="background:${primary};${tileStyle}"><img src="${logoDataUri}" class="object-contain max-h-full max-w-full"/></div>
+          <div class="flex items-center justify-center p-3" style="background:${accent};${tileStyle}"><img src="${logoDataUri}" class="object-contain max-h-full max-w-full"/></div>
         </div>
         <p class="text-xs text-gray-400 mt-2">On light, on primary, on accent.</p>
       </section>
 
-      <!-- Clearspace -->
+      <!-- Clearspace (shape-aware) -->
       <section>
-        <h2 class="eyebrow text-xs uppercase text-gray-400 mb-4">Logo Clear Space</h2>
-        <div class="rounded-lg border border-gray-200 p-8 mb-3" style="background:${light}">
-          <div class="relative border-2 border-dashed" style="border-color:${accent};padding:2rem">
-            <img src="${logoDataUri}" alt="clearspace demo" class="h-14 object-contain mx-auto"/>
+        <div class="flex items-baseline justify-between mb-4">
+          <h2 class="eyebrow text-xs uppercase text-gray-400">Logo Clear Space</h2>
+          <span class="font-mono text-[10px] text-gray-400">min ${m.shape.clearspaceLabel}</span>
+        </div>
+        <div class="rounded-lg border border-gray-200 p-8 mb-3 flex items-center justify-center" style="background:${light}">
+          <div class="border-2 border-dashed flex items-center justify-center" style="border-color:${accent};padding:2rem;${m.shape.category === "circle" ? "border-radius:9999px" : ""}">
+            <img src="${logoDataUri}" alt="clearspace demo" class="object-contain" style="max-height:56px;max-width:180px"/>
           </div>
         </div>
         <p class="text-sm text-gray-700 font-medium">${m.clearspace.rule}</p>
@@ -143,8 +164,8 @@ export function generateHtmlGuide(m: BrandModel, logoDataUri: string): string {
         <h2 class="eyebrow text-xs uppercase text-gray-400 mb-4">Typography</h2>
         <div class="rounded-lg border border-gray-200 p-6">
           <div class="mb-4">
-            <div class="text-xs text-gray-500">Display — ${m.typography.display}</div>
-            <div class="text-xs text-gray-500 mt-1">Body — ${m.typography.body}</div>
+            <div class="text-xs text-gray-500">Display — <a href="${m.typography.displayUrl}" target="_blank" rel="noopener" class="font-medium underline decoration-gray-300 hover:decoration-gray-600" style="color:${primary}">${m.typography.display}</a></div>
+            <div class="text-xs text-gray-500 mt-1">Body — <a href="${m.typography.bodyUrl}" target="_blank" rel="noopener" class="font-medium underline decoration-gray-300 hover:decoration-gray-600" style="color:${primary}">${m.typography.body}</a></div>
           </div>
           ${scaleRows}
           <p class="text-xs text-gray-400 mt-3">${m.typography.rationale}</p>
@@ -154,13 +175,13 @@ export function generateHtmlGuide(m: BrandModel, logoDataUri: string): string {
       <!-- Iconography + Buttons -->
       <section>
         <h2 class="eyebrow text-xs uppercase text-gray-400 mb-4">Iconography Style</h2>
-        <div class="rounded-lg border border-gray-200 p-6 flex gap-4 flex-wrap mb-6">${icons}</div>
-        <p class="text-xs text-gray-500 mb-8">${m.iconStyle.explainer} Style: <strong>${m.iconStyle.rounding}</strong>.</p>
+        <div class="rounded-lg border border-gray-200 px-6 py-5 flex items-center justify-between mb-6">${icons}</div>
+        <p class="text-xs text-gray-500 mb-8">${m.iconStyle.explainer} Style: <strong>${m.iconStyle.rounding}</strong>. Each icon links to its Google Icons page.</p>
 
         <h2 class="eyebrow text-xs uppercase text-gray-400 mb-4">Button Style</h2>
-        <div class="rounded-lg border border-gray-200 p-6 flex gap-3 flex-wrap">
-          <button style="background:${accent};color:${primary};border-radius:${buttonRadius}" class="px-5 py-2.5 text-sm font-semibold">Primary action</button>
-          <button style="background:transparent;color:${primary};border:1px solid ${primary};border-radius:${buttonRadius}" class="px-5 py-2.5 text-sm font-semibold">Secondary</button>
+        <div class="rounded-lg border border-gray-200 p-6 flex items-center gap-4">
+          <button style="background:${accent};color:${primary};border-radius:${buttonRadius}" class="px-6 py-3 text-sm font-semibold">Primary action</button>
+          <button style="background:transparent;color:${primary};border:1px solid ${primary};border-radius:${buttonRadius}" class="px-6 py-3 text-sm font-semibold">Secondary</button>
         </div>
         <p class="text-xs text-gray-500 mt-2">${m.buttonStyle.explainer} Radius: <strong>${buttonRadius}</strong>.</p>
       </section>

@@ -25,8 +25,30 @@ export interface BrandChip {
   detail: string;
 }
 
+export type ShapeCategory =
+  | "circle"
+  | "landscape"
+  | "vertical"
+  | "square"
+  | "pill"
+  | "irregular";
+
+// Encodes the Enterprise Brand Shape Taxonomy (aspect ratio + clearspace per shape).
+// Drives how the company-logo, clearspace, and on-color tiles render in the guide.
+export interface ShapeSpec {
+  category: ShapeCategory;
+  label: string;
+  exampleAssets: string;
+  aspectRatios: string; // human-readable, e.g. "1:1 · 4:3 (Oval)"
+  previewRatio: number; // width / height, used to render the logo frame
+  clearspaceLabel: string; // e.g. "0.5H", "2X Radius"
+  clearspaceRule: string; // plain-English rule
+  notes: string;
+}
+
 export interface BrandModel {
   brandName: string;
+  shape: ShapeSpec;
   palette: PaletteRole[];
   clearspace: { rule: string; multiplier: number; explainer: string };
   typography: TypePairing;
@@ -145,18 +167,95 @@ export function assignPaletteRoles(extracted: ExtractedColor[]): {
 }
 
 // ─────────────────────────────────────────────────────────────
-// RULE 2 — Clearspace (the "padding around your logo" nobody explains)
-// Deterministic rule: clearspace = 1× the cap-height (or 25% of the
-// logo's shorter dimension when cap-height is unknown). This is the
-// widely used "X-height / mark unit" convention, stated plainly.
+// RULE 2 — Shape taxonomy + clearspace
+// The user names their logo's shape category; we apply the encoded taxonomy
+// (aspect ratio guidance + minimum clear-space) from the Enterprise Brand
+// Shape Taxonomy. Clearspace is derived from the shape, not guessed.
 // ─────────────────────────────────────────────────────────────
-export function computeClearspace(logoHasWordmark: boolean): BrandModel["clearspace"] {
-  const multiplier = logoHasWordmark ? 1 : 0.25;
+export const SHAPE_TAXONOMY: Record<ShapeCategory, ShapeSpec> = {
+  circle: {
+    category: "circle",
+    label: "Circle / Oval",
+    exampleAssets: "Standalone monograms, profile avatars, secondary badges",
+    aspectRatios: "1:1 · 4:3 (Oval)",
+    previewRatio: 1,
+    clearspaceLabel: "2× radius",
+    clearspaceRule:
+      "Keep clear space equal to the logo's radius on all sides (a full logo-width of empty space around it).",
+    notes: "Main app icons, profile pics",
+  },
+  landscape: {
+    category: "landscape",
+    label: "Landscape Rectangle",
+    exampleAssets: "Global navigation headers, lower-third graphics, wide print banners",
+    aspectRatios: "21:9 · 16:9 · 3:1",
+    previewRatio: 16 / 9,
+    clearspaceLabel: "0.5H",
+    clearspaceRule:
+      "Keep clear space equal to half the logo's height on all four sides.",
+    notes: "Web headers, video lower-thirds",
+  },
+  vertical: {
+    category: "vertical",
+    label: "Vertical Rectangle",
+    exampleAssets: "Marketing posters, mobile app screens, side navigation menus",
+    aspectRatios: "9:16 · 4:5 · 1:2",
+    previewRatio: 4 / 5,
+    clearspaceLabel: "0.5W",
+    clearspaceRule:
+      "Keep clear space equal to half the logo's width on all four sides.",
+    notes: "Physical print, mobile layouts",
+  },
+  square: {
+    category: "square",
+    label: "Square",
+    exampleAssets: "Social media tiles, product feature icons, square app icons",
+    aspectRatios: "1:1",
+    previewRatio: 1,
+    clearspaceLabel: "1× side length",
+    clearspaceRule:
+      "Keep clear space equal to one side length of the logo on all four sides.",
+    notes: "Instagram posts, grid icons",
+  },
+  pill: {
+    category: "pill",
+    label: "Pill / Capsule",
+    exampleAssets: "CTA buttons, status indicators, tag labels",
+    aspectRatios: "Adjustable, typically 4:1",
+    previewRatio: 4,
+    clearspaceLabel: "0.5H",
+    clearspaceRule:
+      "Keep clear space equal to half the logo's height on all four sides.",
+    notes: "Primary buttons, tags, labels",
+  },
+  irregular: {
+    category: "irregular",
+    label: "Irregular / Dynamic",
+    exampleAssets: "Fluid marketing shapes, custom illustrations, hero backgrounds",
+    aspectRatios: "Variable / N/A",
+    previewRatio: 1.6,
+    clearspaceLabel: "X ÷ 2 (X = shortest dimension)",
+    clearspaceRule:
+      "Keep clear space equal to half the shortest dimension of the logo on all sides.",
+    notes: "Expressive brand visuals, backgrounds",
+  },
+};
+
+export function resolveShape(category: ShapeCategory): ShapeSpec {
+  return SHAPE_TAXONOMY[category] ?? SHAPE_TAXONOMY.square;
+}
+
+function clearspaceFromShape(spec: ShapeSpec): BrandModel["clearspace"] {
+  // multiplier retained for downstream consumers; derived from the shape label.
+  const multiplier =
+    spec.category === "circle"
+      ? 2
+      : spec.category === "square"
+      ? 1
+      : 0.5;
   return {
     multiplier,
-    rule: logoHasWordmark
-      ? "Keep clear space equal to the height of one letter in your logo on all four sides."
-      : "Keep clear space equal to 25% of the logo's width on all four sides.",
+    rule: spec.clearspaceRule,
     explainer:
       "Clear space is the empty margin that must surround your logo so nothing crowds it — " +
       "no text, no other logos, no photo edges. It keeps the mark legible and premium. " +
@@ -237,6 +336,11 @@ export function resolveTypography(mood: string): TypePairing {
 // RULE 4 — Iconography style (Google Material Symbols only)
 // Maps the user's one choice to a concrete Material Symbols config.
 // ─────────────────────────────────────────────────────────────
+export interface IconLink {
+  name: string; // icon short name, e.g. "home"
+  url: string; // deep link to that icon on fonts.google.com/icons
+}
+
 export interface IconStyle {
   family: string;
   fill: 0 | 1;
@@ -245,6 +349,21 @@ export interface IconStyle {
   sourceUrl: string;
   explainer: string;
   sampleIcons: string[];
+  sampleIconLinks: IconLink[]; // each sample icon links to its own Google Icons page
+}
+
+// Builds a deep link to a specific icon on fonts.google.com/icons, styled to match.
+function iconUrl(name: string, choice: "sharp" | "rounded" | "outlined"): string {
+  const styleParam =
+    choice === "rounded" ? "Rounded" : choice === "sharp" ? "Sharp" : "Outlined";
+  const params = new URLSearchParams({
+    "icon.query": name,
+    "selected": `Material Symbols ${styleParam}:${name}`,
+    "icon.style": styleParam,
+    "icon.size": "24",
+    "icon.color": "#1f1f1f",
+  });
+  return `https://fonts.google.com/icons?${params.toString()}`;
 }
 
 export function resolveIconStyle(
@@ -256,6 +375,7 @@ export function resolveIconStyle(
       : choice === "sharp"
       ? "Material Symbols Sharp"
       : "Material Symbols Outlined";
+  const sampleIcons = ["home", "mail", "search", "settings", "check_circle", "bolt"];
   return {
     family,
     fill: choice === "outlined" ? 0 : 1,
@@ -266,7 +386,8 @@ export function resolveIconStyle(
       "Iconography style is just the shape language of your icons — sharp corners, rounded corners, " +
       "or outline-only. Pick one and use it everywhere so the interface feels like one product. " +
       "All icons come from Google's free Material Symbols set.",
-    sampleIcons: ["home", "mail", "search", "settings", "check_circle", "bolt"],
+    sampleIcons,
+    sampleIconLinks: sampleIcons.map((name) => ({ name, url: iconUrl(name, choice) })),
   };
 }
 
@@ -295,21 +416,78 @@ export function resolveButtonStyle(
 // ─────────────────────────────────────────────────────────────
 // Compose the full brand model
 // ─────────────────────────────────────────────────────────────
+// User-confirmed brand colors. The form always shows these three pickers,
+// pre-filled from extraction — the user confirms or overrides every time.
+// This is what makes monochrome logos (black-on-white wordmarks like
+// KzooParking) work: extraction can't invent a secondary/accent that isn't
+// in the pixels, so the human supplies them.
+export interface ColorChoices {
+  primary: Hex;
+  secondary: Hex;
+  accent: Hex;
+}
+
 export interface FormAnswers {
   brandName: string;
   extracted: ExtractedColor[];
-  logoHasWordmark: boolean;
+  colors: ColorChoices; // confirmed/overridden by the user
+  shapeCategory: ShapeCategory;
   typeMood: string;
   iconChoice: "sharp" | "rounded" | "outlined";
   buttonShape: "square" | "rounded" | "pill";
 }
 
+// Suggests pre-fill values for the three pickers from extraction.
+// Falls back to sensible neutrals so a monochrome logo still yields a
+// usable starting point the user then edits.
+export function suggestColorChoices(extracted: ExtractedColor[]): ColorChoices {
+  const { palette } = assignPaletteRoles(extracted);
+  const get = (role: PaletteRole["role"], fallback: Hex) =>
+    palette.find((p) => p.role === role)?.hex ?? fallback;
+  return {
+    primary: get("primary", "#0A2E36"),
+    secondary: get("secondary", "#3F7266"),
+    accent: get("accent", "#00E5A3"),
+  };
+}
+
+// Builds the final 5-role palette from the user's three confirmed colors,
+// deriving dark/light deterministically and running the honesty contrast check.
+function paletteFromChoices(c: ColorChoices): {
+  palette: PaletteRole[];
+  chips: BrandChip[];
+} {
+  const chips: BrandChip[] = [];
+  const dark = lightness(c.primary) < 0.15 ? c.primary : "#111827";
+  const light = "#FFFFFF";
+  const palette: PaletteRole[] = [
+    { role: "primary", hex: c.primary, usage: "Headers, nav bars, dark sections" },
+    { role: "secondary", hex: c.secondary, usage: "Icons, dividers, supporting labels" },
+    { role: "accent", hex: c.accent, usage: "Buttons, links, active states — used sparingly" },
+    { role: "dark", hex: dark, usage: "Body text and strong borders" },
+    { role: "light", hex: light, usage: "Page background and card fills" },
+  ];
+  const accentOnWhite = contrastRatio(c.accent, "#FFFFFF");
+  if (accentOnWhite < 4.5) {
+    chips.push({
+      id: "TODO_CONTRAST_AUDIT",
+      title: "Accent color fails AA on white",
+      detail:
+        `Accent ${c.accent} scores ${accentOnWhite.toFixed(2)}:1 against white ` +
+        "(AA needs 4.5:1 for text). Use it for large elements or fills, not small text.",
+    });
+  }
+  return { palette, chips };
+}
+
 export function buildBrandModel(a: FormAnswers): BrandModel {
-  const { palette, chips } = assignPaletteRoles(a.extracted);
+  const { palette, chips } = paletteFromChoices(a.colors);
+  const shape = resolveShape(a.shapeCategory);
   return {
     brandName: a.brandName,
+    shape,
     palette,
-    clearspace: computeClearspace(a.logoHasWordmark),
+    clearspace: clearspaceFromShape(shape),
     typography: resolveTypography(a.typeMood),
     iconStyle: resolveIconStyle(a.iconChoice),
     buttonStyle: resolveButtonStyle(a.buttonShape),

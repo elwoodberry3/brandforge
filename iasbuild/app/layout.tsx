@@ -21,15 +21,10 @@ export const metadata: Metadata = {
   description: build.tagline,
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${grotesk.variable} ${mono.variable}`}>
       <body className="min-h-screen bg-white font-sans text-dark antialiased">
-        {/* Shared header/footer wrap every route — the single source of nav logic. */}
         <SiteHeader />
         <main>{children}</main>
         <SiteFooter />
