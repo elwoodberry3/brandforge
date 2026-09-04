@@ -1,3 +1,4 @@
+![BrandForge](./assets/images/hero.png)
 # BrandForge
 ## IAS Build 022 — BrandDeck Generator
 
