@@ -1,12 +1,12 @@
 import { LegalPage, H2 } from "@/components/LegalPage";
 
-export const metadata = { title: "Terms — BrandDeck Generator" };
+export const metadata = { title: "Terms — BrandForge" };
 
 export default function Terms() {
   return (
     <LegalPage title="Terms of Use" updated="August 2026">
       <p>
-        By using the BrandDeck Generator you agree to the following. These terms are plain
+        By using the BrandForge you agree to the following. These terms are plain
         on purpose.
       </p>
 

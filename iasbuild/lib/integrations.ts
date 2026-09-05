@@ -170,7 +170,7 @@ function emailBody(brandName: string): string {
       <li><strong>CLAUDE.md</strong> — brand rules your AI reads automatically. Drop it at your project root.</li>
       <li><strong>brand-guide.html</strong> — open in any browser to view your full guide.</li>
     </ul>
-    <p style="font-size:13px;color:#6B7280">Generated deterministically by the IAS BrandDeck Generator.
+    <p style="font-size:13px;color:#6B7280">Generated deterministically by the IAS BrandForge.
     Every rule traces to your inputs — nothing was invented.</p>
   </div>`;
 }

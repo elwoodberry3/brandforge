@@ -1,37 +1,41 @@
 import Link from "next/link";
-import { build } from "@/build.config";
+import { site } from "@/lib/site.config";
+import { BrandLogo } from "@/components/BrandLogo";
 
-// Shared header. Carries the IAS logo mark (inherited SVG) + wordmark.
-// Sticky, light-mode, matching the portfolio nav across builds.
+/**
+ * SiteHeader — shared top bar, matching AgentForge and IASBOOTCAMP exactly.
+ *
+ * IAS wordmark (onLight SVG) links home; nav is "Tools" + "About" driven from
+ * site.nav (config, not markup). No Book-a-Call CTA, no build-number chip —
+ * those belonged to the old portfolio header and are gone for parity.
+ *
+ * The logo link carries the aria-label, so BrandLogo is decorative to avoid a
+ * double announce.
+ */
 export function SiteHeader() {
   return (
-    <nav className="sticky top-0 z-50 flex h-[60px] items-center justify-between border-b border-mid bg-white px-5 md:px-8">
-      <Link href="/" className="flex items-center gap-2.5 no-underline" aria-label="I Automate Shit — home">
-        <span className="flex h-[34px] w-[34px] flex-shrink-0 items-center justify-center rounded-lg bg-primary">
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-            <rect x="3" y="5" width="14" height="11" rx="2" stroke="#00E5A3" strokeWidth="1.5" fill="none" />
-            <rect x="6.5" y="8" width="3" height="2.5" rx="0.75" fill="#00E5A3" />
-            <rect x="10.5" y="8" width="3" height="2.5" rx="0.75" fill="#00E5A3" />
-            <rect x="6.5" y="12" width="7" height="1.5" rx="0.5" fill="#3F7266" />
-            <line x1="10" y1="3" x2="10" y2="5" stroke="#00E5A3" strokeWidth="1.5" strokeLinecap="round" />
-          </svg>
-        </span>
-        <span className="text-[15px] font-bold leading-none tracking-[-0.01em] text-primary">
-          I Automate <span className="text-accent">Shit</span>
-        </span>
-      </Link>
-
-      <div className="flex items-center gap-4">
-        <span className="hidden font-mono text-[11px] uppercase tracking-[0.12em] text-muted sm:inline">
-          Build {String(build.buildNumber).padStart(3, "0")}
-        </span>
-        <a
-          href={build.links.booking}
-          className="rounded-btn bg-accent px-5 py-2.5 text-[13px] font-bold text-primary no-underline transition-opacity hover:opacity-85"
+    <header className="border-b border-hair">
+      <div className="mx-auto flex max-w-page items-center justify-between px-6 py-4">
+        <Link
+          href="/"
+          aria-label={`${site.brand.name} home`}
+          className="inline-flex items-center"
         >
-          Book a Call
-        </a>
+          <BrandLogo variant="onLight" decorative className="h-7 w-auto" />
+        </Link>
+
+        <nav aria-label="Primary" className="flex items-center gap-6">
+          {site.nav.map((item) => (
+            <a
+              key={item.href}
+              href={item.href}
+              className="font-mono text-xs uppercase tracking-[0.14em] text-muted transition hover:text-primary"
+            >
+              {item.label}
+            </a>
+          ))}
+        </nav>
       </div>
-    </nav>
+    </header>
   );
 }

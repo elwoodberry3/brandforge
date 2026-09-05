@@ -1,10 +1,10 @@
-// build.config.ts — IAS Build 022: BrandDeck Generator
+// build.config.ts — IAS Build 022: BrandForge
 // Config-as-data: one file drives all page content for this build.
 // Inherits locked IAS token names; per-build re-skin is a one-file change.
 
 export const build = {
   buildNumber: 22,
-  name: "BrandDeck Generator",
+  name: "BrandForge",
   sector: "Creator Tools & Agency Enablement",
   tagline:
     "Upload a logo. Answer a few plain-English questions. Get a brand guide your AI can actually read.",
@@ -84,8 +84,8 @@ export const build = {
   },
 
   links: {
-    github: "https://github.com/elwoodberry3/ias-build-022-branddeck",
-    portfolio: "https://branddeck.elwoodberry.com",
+    github: "https://github.com/elwoodberry3/ias-build-022-brandforge",
+    portfolio: "https://brandforge.elwoodberry.com",
     booking: "https://elwoodberry.com/contact",
   },
 } as const;

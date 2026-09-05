@@ -1,12 +1,12 @@
 import { LegalPage, H2 } from "@/components/LegalPage";
 
-export const metadata = { title: "Privacy — BrandDeck Generator" };
+export const metadata = { title: "Privacy — BrandForge" };
 
 export default function Privacy() {
   return (
     <LegalPage title="Privacy" updated="August 2026">
       <p>
-        This page describes what the BrandDeck Generator does with the information you
+        This page describes what the BrandForge does with the information you
         provide. It is written to be accurate, not comprehensive-sounding. Where something
         is not yet formalized, it says so.
       </p>

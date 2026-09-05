@@ -178,8 +178,8 @@ export function BrandForm() {
 
   return (
     <div>
-      {/* Progress dots */}
-      <div className="mb-6 flex gap-2">
+      {/* Progress dots — centered above the form card (change #3). */}
+      <div className="mb-6 flex justify-center gap-2">
         {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
           <span
             key={i}

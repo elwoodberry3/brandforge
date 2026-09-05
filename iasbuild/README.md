@@ -1,4 +1,4 @@
-# IAS Build 022 — BrandDeck Generator
+# IAS Build 022 — BrandForge
 
 A light-mode, multi-step form for people who own a logo but have never written a
 brand guide. It extracts a palette from the uploaded logo, walks the user through

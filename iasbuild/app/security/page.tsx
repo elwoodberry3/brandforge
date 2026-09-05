@@ -1,6 +1,6 @@
 import { LegalPage, H2 } from "@/components/LegalPage";
 
-export const metadata = { title: "Security — BrandDeck Generator" };
+export const metadata = { title: "Security — BrandForge" };
 
 export default function Security() {
   return (

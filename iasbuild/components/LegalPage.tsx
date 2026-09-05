@@ -11,7 +11,7 @@ export function LegalPage({
   return (
     <div className="mx-auto max-w-3xl px-5 py-16 md:px-8">
       <p className="mb-3 font-mono text-[11px] uppercase tracking-[0.14em] text-secondary">
-        BrandDeck Generator
+        BrandForge
       </p>
       <h1 className="text-3xl font-bold tracking-[-0.02em] text-primary md:text-4xl">
         {title}
