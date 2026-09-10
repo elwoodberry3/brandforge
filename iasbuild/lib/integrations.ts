@@ -10,6 +10,8 @@
 //
 // Governance: no fabricated success. In demo mode we say so in the response.
 
+import { renderBrandDeliveryEmail, slugifyBrand } from "./deliveryEmail";
+
 export interface DeliveryResult {
   emailSent: boolean;
   hubspotUpserted: boolean;
@@ -34,6 +36,16 @@ async function sendEmail(input: DeliveryInput): Promise<{ ok: boolean; note: str
     return { ok: false, note: "Resend not configured — email skipped (demo mode)." };
   }
   try {
+    const firstName =
+      (input.email.split("@")[0] || "there").split(/[._-]/)[0].replace(/^\w/, (c) => c.toUpperCase());
+    const origin = process.env.PUBLIC_ORIGIN || "https://brandforge.iasbootcamp.com";
+    const unsubscribeUrl = `${origin}/unsubscribe?e=${encodeURIComponent(input.email)}`;
+    const html = renderBrandDeliveryEmail({
+      brand_name: input.brandName,
+      brand_slug: slugifyBrand(input.brandName),
+      first_name: firstName,
+      unsubscribe_url: unsubscribeUrl,
+    });
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
@@ -44,7 +56,11 @@ async function sendEmail(input: DeliveryInput): Promise<{ ok: boolean; note: str
         from,
         to: input.email,
         subject: `Your ${input.brandName} brand guide is ready`,
-        html: emailBody(input.brandName),
+        html,
+        headers: {
+          "List-Unsubscribe": `<${unsubscribeUrl}>, <mailto:unsubscribe@i-automate-shit.com>`,
+          "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+        },
         attachments: [
           {
             filename: "CLAUDE.md",
@@ -68,16 +84,24 @@ async function sendEmail(input: DeliveryInput): Promise<{ ok: boolean; note: str
 }
 
 // ── HubSpot upsert-by-email ───────────────────────────────
+// Persona resolution (tool_brandforge, additive via resolveRetag) is owned by
+// n8n in forwardN8n(). This direct path is a FALLBACK for when n8n isn't wired:
+// it upserts by email WITHOUT writing ias_source, so it can never clobber a
+// higher-value persona set elsewhere. It only records the last brand + a funnel
+// tag in ias_last_asset. When N8N_WEBHOOK_URL is set, prefer letting n8n own the
+// write and leave HUBSPOT_TOKEN unset to avoid a double-write.
 async function upsertHubspot(
   email: string,
   brandName: string
 ): Promise<{ ok: boolean; note: string }> {
   const token = process.env.HUBSPOT_TOKEN;
   if (!token) {
-    return { ok: false, note: "HubSpot not configured — contact not stored (demo mode)." };
+    return { ok: false, note: "HubSpot not configured — n8n owns the upsert (or demo mode)." };
   }
   try {
     // Batch upsert with idProperty: email — same dedup strategy as builds 020/021.
+    // Deliberately does NOT set ias_source: only n8n's resolveRetag may decide
+    // persona, so a direct fallback write can't overwrite a student/exec tag.
     const res = await fetch(
       "https://api.hubapi.com/crm/v3/objects/contacts/batch/upsert",
       {
@@ -93,8 +117,7 @@ async function upsertHubspot(
               id: email,
               properties: {
                 email,
-                branddeck_last_brand: brandName,
-                branddeck_source: "build-022",
+                ias_last_asset: `brand-guide:${brandName}`,
               },
             },
           ],
@@ -105,31 +128,50 @@ async function upsertHubspot(
       const text = await res.text();
       return { ok: false, note: `HubSpot error ${res.status}: ${text.slice(0, 120)}` };
     }
-    return { ok: true, note: "Contact upserted to HubSpot by email." };
+    return { ok: true, note: "Contact upserted (fallback, no persona clobber)." };
   } catch (e) {
     return { ok: false, note: `HubSpot request failed: ${(e as Error).message}` };
   }
 }
 
-// ── n8n forward (optional orchestration hop) ──────────────
+// ── n8n forward (persona capture + orchestration) ─────────
+// Captures this person as a DEVELOPER (tool_brandforge) through n8n, which
+// upserts by email and runs resolveRetag(): a live paid relationship
+// (bootcamp_subscriber) or higher-value persona outranks a free tool tag, so a
+// developer who is ALSO a student or an exec keeps that standing and simply
+// gains the BrandForge usage. Additive by design — never clobbers.
 async function forwardN8n(input: DeliveryInput): Promise<{ ok: boolean; note: string }> {
   const url = process.env.N8N_WEBHOOK_URL;
   if (!url) {
     return { ok: false, note: "n8n webhook not configured — not forwarded (demo mode)." };
   }
   try {
+    const firstName =
+      (input.email.split("@")[0] || "").split(/[._-]/)[0].replace(/^\w/, (c) => c.toUpperCase());
     const res = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(process.env.N8N_WEBHOOK_SECRET ? { "x-ias-secret": process.env.N8N_WEBHOOK_SECRET } : {}),
+      },
       body: JSON.stringify({
-        event: "branddeck.form.submitted",
+        stage: "tool_use",
+        tool: "brandforge-brand-guide",
+        event: "brandforge.form.submitted",
         email: input.email,
+        first_name: firstName,
         brand_name: input.brandName,
         logo_filename: input.logoFilename,
+        // Ecosystem taxonomy: explicit developer persona + funnel + last asset.
+        // n8n maps `source` to a valid ias_source enum and resolveRetag keeps the
+        // higher-value persona if one already exists.
+        source: "brandforge-tool",
+        ias_source: "tool_brandforge",
+        ias_last_asset: `brand-guide:${input.brandName}`,
       }),
     });
     return res.ok
-      ? { ok: true, note: "Submission forwarded to n8n." }
+      ? { ok: true, note: "Developer captured + forwarded to n8n (tool_brandforge)." }
       : { ok: false, note: `n8n returned ${res.status}.` };
   } catch (e) {
     return { ok: false, note: `n8n request failed: ${(e as Error).message}` };
@@ -160,17 +202,4 @@ export async function deliver(input: DeliveryInput): Promise<DeliveryResult> {
     mode,
     notes: [email.note, hubspot.note, n8n.note],
   };
-}
-
-function emailBody(brandName: string): string {
-  return `<div style="font-family:system-ui,sans-serif;max-width:520px;margin:0 auto;color:#111827">
-    <h2 style="color:#0A2E36">Your ${brandName} brand guide is attached</h2>
-    <p>Two files are attached to this email:</p>
-    <ul>
-      <li><strong>CLAUDE.md</strong> — brand rules your AI reads automatically. Drop it at your project root.</li>
-      <li><strong>brand-guide.html</strong> — open in any browser to view your full guide.</li>
-    </ul>
-    <p style="font-size:13px;color:#6B7280">Generated deterministically by the IAS BrandForge.
-    Every rule traces to your inputs — nothing was invented.</p>
-  </div>`;
 }
