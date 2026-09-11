@@ -11,6 +11,7 @@
 // Governance: no fabricated success. In demo mode we say so in the response.
 
 import { renderBrandDeliveryEmail, slugifyBrand } from "./deliveryEmail";
+import { stashAndSign, downloadUrl } from "./signedLink";
 
 export interface DeliveryResult {
   emailSent: boolean;
@@ -40,44 +41,62 @@ async function sendEmail(input: DeliveryInput): Promise<{ ok: boolean; note: str
       (input.email.split("@")[0] || "there").split(/[._-]/)[0].replace(/^\w/, (c) => c.toUpperCase());
     const origin = process.env.PUBLIC_ORIGIN || "https://brandforge.iasbootcamp.com";
     const unsubscribeUrl = `${origin}/unsubscribe?e=${encodeURIComponent(input.email)}`;
+
+    // IAS delivery pattern: link, don't attach. The brand-guide.html attachment
+    // was the confirmed Gmail spam trigger. Stash both files behind signed,
+    // expiring /d/<token> links on our own domain. Fall back to attaching only
+    // if signed links aren't configured (no DOWNLOAD_SECRET / Upstash), so
+    // delivery never silently fails.
+    const [claudeToken, guideToken] = await Promise.all([
+      stashAndSign({ content: input.claudeMd, filename: "CLAUDE.md", mime: "text/markdown; charset=utf-8" }),
+      stashAndSign({ content: input.htmlGuide, filename: "brand-guide.html", mime: "text/html; charset=utf-8" }),
+    ]);
+    const useLinks = claudeToken !== null && guideToken !== null;
+
     const html = renderBrandDeliveryEmail({
       brand_name: input.brandName,
       brand_slug: slugifyBrand(input.brandName),
       first_name: firstName,
+      claude_md_url: useLinks ? downloadUrl(origin, claudeToken!) : "#",
+      brand_guide_url: useLinks ? downloadUrl(origin, guideToken!) : "#",
       unsubscribe_url: unsubscribeUrl,
     });
+
+    const payload: Record<string, unknown> = {
+      from,
+      to: input.email,
+      subject: `Your ${input.brandName} brand guide is ready`,
+      html,
+      headers: {
+        "List-Unsubscribe": `<${unsubscribeUrl}>, <mailto:unsubscribe@i-automate-shit.com>`,
+        "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+      },
+    };
+    if (!useLinks) {
+      payload.attachments = [
+        { filename: "CLAUDE.md", content: Buffer.from(input.claudeMd).toString("base64") },
+        { filename: "brand-guide.html", content: Buffer.from(input.htmlGuide).toString("base64") },
+      ];
+    }
+
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${key}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        from,
-        to: input.email,
-        subject: `Your ${input.brandName} brand guide is ready`,
-        html,
-        headers: {
-          "List-Unsubscribe": `<${unsubscribeUrl}>, <mailto:unsubscribe@i-automate-shit.com>`,
-          "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
-        },
-        attachments: [
-          {
-            filename: "CLAUDE.md",
-            content: Buffer.from(input.claudeMd).toString("base64"),
-          },
-          {
-            filename: "brand-guide.html",
-            content: Buffer.from(input.htmlGuide).toString("base64"),
-          },
-        ],
-      }),
+      body: JSON.stringify(payload),
     });
     if (!res.ok) {
       const text = await res.text();
       return { ok: false, note: `Resend error ${res.status}: ${text.slice(0, 120)}` };
     }
-    return { ok: true, note: "Email sent via Resend with both files attached." };
+    return {
+      ok: true,
+      note: useLinks
+        ? "Email sent via Resend with signed download links (no attachments)."
+        : "Email sent via Resend with both files attached (link fallback).",
+    };
   } catch (e) {
     return { ok: false, note: `Resend request failed: ${(e as Error).message}` };
   }
