@@ -50,20 +50,32 @@ function sign(payloadB64: string): string {
 }
 
 // ── Upstash (raw HTTP, matches rateLimit.ts) ──────────────────────────────
+// Sends ONE command per call to the base REST endpoint as a single JSON array
+// (["SET", key, val, "EX", "86400"]) — the base endpoint's documented shape.
+// Every element is stringified: Upstash 400s on a bare number in the array.
+// On error we surface the actual response body, not just the status, so a 400
+// tells you WHY (bad command, oversized value, wrong endpoint) instead of a
+// bare number.
 async function redis(command: (string | number)[]): Promise<any> {
-  // Every element must be a string — Upstash's REST pipeline 400s on a bare
-  // number in the command array. Coerce defensively so no caller can reintroduce
-  // the "EX",86400 bug.
   const stringCommand = command.map((c) => String(c));
   const res = await fetch(REST_URL!, {
     method: "POST",
     headers: { Authorization: `Bearer ${REST_TOKEN}`, "Content-Type": "application/json" },
-    body: JSON.stringify([stringCommand]),
+    body: JSON.stringify(stringCommand),
     cache: "no-store",
   });
-  if (!res.ok) throw new Error(`Upstash ${res.status}`);
+  if (!res.ok) {
+    let detail = "";
+    try {
+      detail = await res.text();
+    } catch {
+      /* ignore */
+    }
+    throw new Error(`Upstash ${res.status}: ${detail.slice(0, 200)}`);
+  }
   const data = await res.json();
-  return Array.isArray(data) ? data[0]?.result : data?.result;
+  // Single-command response shape: { result: ... }
+  return data?.result;
 }
 
 /**
