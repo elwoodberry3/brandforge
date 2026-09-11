@@ -51,10 +51,14 @@ function sign(payloadB64: string): string {
 
 // ── Upstash (raw HTTP, matches rateLimit.ts) ──────────────────────────────
 async function redis(command: (string | number)[]): Promise<any> {
+  // Every element must be a string — Upstash's REST pipeline 400s on a bare
+  // number in the command array. Coerce defensively so no caller can reintroduce
+  // the "EX",86400 bug.
+  const stringCommand = command.map((c) => String(c));
   const res = await fetch(REST_URL!, {
     method: "POST",
     headers: { Authorization: `Bearer ${REST_TOKEN}`, "Content-Type": "application/json" },
-    body: JSON.stringify([command]),
+    body: JSON.stringify([stringCommand]),
     cache: "no-store",
   });
   if (!res.ok) throw new Error(`Upstash ${res.status}`);
@@ -79,7 +83,9 @@ export async function stashAndSign(input: {
   const ttlSeconds = Math.ceil(ttl / 1000);
 
   // SET key <content> EX <ttlSeconds> — payload self-expires; no cleanup job.
-  await redis(["SET", key, input.content, "EX", ttlSeconds]);
+  // TTL must be a STRING: Upstash's REST pipeline rejects a bare number in the
+  // command array with a 400 (unquoted "EX",86400 is invalid; "EX","86400" is ok).
+  await redis(["SET", key, input.content, "EX", String(ttlSeconds)]);
 
   const now = Date.now();
   const payload: Payload = { k: key, f: input.filename, m: input.mime, iat: now, exp: now + ttl };
